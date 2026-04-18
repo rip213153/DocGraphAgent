@@ -1,16 +1,28 @@
-# DocGraphAgent Java
+# DocGraphAgent Java版
 
-Java implementation of a document-centered knowledge base system with:
+这是一个基于 Java 21 和 Spring Boot 构建的智能知识库系统，核心能力包括：
 
-- document parsing and chunking
-- knowledge extraction and knowledge graph writes
-- vector retrieval plus graph retrieval QA
-- Kafka-driven incremental updates
-- Redis short-term memory
-- lightweight workflow orchestration with retry and degradation handling
-- Java 21 virtual-thread-backed workflow subtask execution
+- 文档解析与切分
+- 知识抽取与知识图谱写入
+- 向量检索 + 图谱检索的混合问答
+- 基于 Kafka 的增量更新
+- Redis 短期记忆
+- 轻量状态机工作流编排
+- 基于 Java 21 Virtual Threads 的 I/O 型并发优化
 
-## Tech Stack
+## 一、项目定位
+
+本项目更适合定义为一个**文档驱动的智能知识库问答系统**，而不是复杂的自治多 Agent 平台。
+
+当前 Java 版重点解决的是：
+
+- 文档入库链路打通
+- Kafka 事件驱动的知识更新
+- 知识图谱与向量检索融合问答
+- 工作流状态、重试、降级的工程化表达
+- Java 21 虚拟线程在业务子任务中的真实接入
+
+## 二、技术栈
 
 - Java 21
 - Spring Boot 3
@@ -22,13 +34,20 @@ Java implementation of a document-centered knowledge base system with:
 - Apache Tika
 - Maven
 
-## Core Capabilities
+## 三、核心能力
 
-### 1. Document Ingest Workflow
+### 1. 文档入库工作流
 
-The ingest pipeline parses source files into chunks, runs knowledge extraction, stores vectors, persists document snapshots, and writes graph entities and relations.
+文档入库链路支持：
 
-Workflow states:
+- 解析源文档
+- 文本切分为 chunk
+- 对 chunk 执行知识抽取
+- 向量写入
+- 文档快照持久化
+- 图谱实体与关系写入
+
+当前入库工作流采用轻量状态机方式编排，状态包括：
 
 - `RECEIVED`
 - `PARSED`
@@ -39,51 +58,55 @@ Workflow states:
 - `GRAPH_STORED`
 - `COMPLETED`
 
-Structured workflow output includes:
+接口返回中已经结构化输出：
 
 - `workflowState`
 - `degraded`
 - `degradeReasons`
 - `retryAttempts`
 
-### 2. Incremental Update Pipeline
+### 2. Kafka 增量更新
 
-Kafka events drive `created`, `modified`, and `deleted` update paths.
+系统支持基于 Kafka 的文档变更事件处理，覆盖：
 
-For modified documents, the Java version supports:
+- `created`
+- `modified`
+- `deleted`
 
-- event idempotency checks
-- version and timestamp based stale-event filtering
-- chunk diff based selective rebuild
-- vector deletion and graph cleanup for stale chunks
-- snapshot persistence for next-round diffing
+在 `modified` 场景下，当前实现支持：
 
-### 3. Hybrid QA
+- 事件幂等校验
+- 版本 / 时间戳顺序保护
+- chunk diff 差异识别
+- stale chunk 的向量删除与图谱清理
+- 新版本快照保存，供后续 diff 使用
 
-The QA path combines:
+### 3. 混合问答
 
-- vector retrieval from Milvus
-- graph retrieval from Neo4j
-- Redis short-term memory context
+问答链路融合了三类上下文：
 
-The current implementation also supports:
+- Redis 短期记忆
+- Milvus 向量检索结果
+- Neo4j 图谱检索结果
 
-- lightweight question mode classification
-- relationship vs descriptive weighting
-- single-path degradation fallback
-- structured degradation reasons in `QAResult`
+当前 Java 版已实现：
+
+- 关系型问题与描述型问题的轻量分类
+- 双路检索的加权混排
+- 单路失败时的降级兜底
+- `QAResult` 中输出结构化降级信息
 
 ### 4. Java 21 Virtual Threads
 
-Virtual threads are wired into workflow subtask execution instead of only being declared at environment level.
+本项目不是只在环境上使用 Java 21，而是把 Virtual Threads 真实接入到了业务执行路径中。
 
-Current usage includes:
+当前主要用于：
 
-- concurrent chunk extraction
-- parallel vector store and snapshot store tasks during ingest
-- parallel vector delete and graph delete tasks during modify events
+- chunk 级知识抽取的并发执行
+- 入库阶段向量写入与快照写入的并行执行
+- 文档修改时向量删除与图谱删除的并行执行
 
-## Project Structure
+## 四、项目结构
 
 ```text
 .
@@ -104,146 +127,168 @@ Current usage includes:
    └─ test
 ```
 
-## Local Dependencies
+## 五、本地依赖
 
-### Minimal Dev Environment
+### 1. 开发环境
 
-Start Redis and Milvus:
+启动 Redis 和 Milvus：
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d
 ```
 
-This is enough for local development of parsing, in-memory/vector-side behavior, and part of the QA path if you do not need Kafka and Neo4j together.
+适合做以下场景的本地开发与调试：
 
-### Full Environment
+- 文档解析
+- chunk 抽取
+- 向量侧逻辑验证
+- 部分问答链路验证
 
-Start Redis, Milvus, Neo4j, Zookeeper, and Kafka:
+### 2. 完整环境
+
+启动 Redis、Milvus、Neo4j、Zookeeper、Kafka：
 
 ```bash
 docker compose -f docker-compose.full.yml up -d
 ```
 
-## Configuration
+适合联调以下完整链路：
 
-Main configuration file:
+- 文档入库
+- 图谱写入
+- Kafka 增量更新
+- 图谱 + 向量混合问答
+
+## 六、配置说明
+
+核心配置文件：
 
 - `src/main/resources/application.yml`
 
-Important settings include:
+重点配置项包括：
 
-- Redis host, port, password
-- Neo4j URI and credentials
-- Kafka bootstrap servers and topic
-- Milvus host, port, collection
-- workflow retry policy
-- execution mode: `virtual` or `platform`
-- extract max concurrency
+- Redis 地址、端口、密码
+- Neo4j URI 与账号密码
+- Kafka 地址与 topic
+- Milvus 地址、端口、collection
+- 工作流重试策略
+- 执行模式：`virtual` 或 `platform`
+- chunk 抽取最大并发数
 
-Useful defaults already included:
+当前默认配置中比较关键的值有：
 
-- workflow retry max attempts: `3`
-- workflow retry delay: `200ms`
-- execution mode: `virtual`
-- extract max concurrency: `8`
+- 工作流最大尝试次数：`3`
+- 重试间隔：`200ms`
+- 执行模式：`virtual`
+- 抽取最大并发：`8`
 
-## Run
+## 七、启动方式
 
-### 1. Build
+### 1. 编译
 
 ```bash
 mvn clean package
 ```
 
-### 2. Start Application
+### 2. 启动服务
 
 ```bash
 mvn spring-boot:run
 ```
 
-Default server port:
+默认端口：
 
 - `8081`
 
-## API Overview
+## 八、接口说明
 
-### Upload Document
+### 1. 上传文档
 
 `POST /api/ingest/upload`
 
-Form field:
+表单参数：
 
 - `file`
 
-Returns ingest result including:
+返回结果中包含：
 
-- chunk count
-- entity count
-- relation count
-- workflow state
-- degradation info
-- retry attempts
+- chunk 数量
+- 实体数量
+- 关系数量
+- 工作流状态
+- 降级信息
+- 重试次数
 
-### Ask Question
+### 2. 提问问答
 
 `POST /api/qa/ask`
 
-Example body:
+请求示例：
 
 ```json
 {
   "sessionId": "demo-session",
-  "question": "What is the relationship between Redis and the knowledge hub?"
+  "question": "Redis 和知识库系统之间是什么关系？"
 }
 ```
 
-### View Stats
+### 3. 查看统计信息
 
 `GET /api/admin/stats`
 
-### Query Event State
+### 4. 查询事件状态
 
 `GET /api/admin/events/{eventId}`
 
-### Replay Failed Event
+### 5. 重放失败事件
 
 `POST /api/admin/events/{eventId}/replay`
 
-## Testing
+## 九、测试
 
-Run all tests:
+运行全部测试：
 
 ```bash
 mvn test
 ```
 
-The test suite covers:
+当前测试覆盖的重点包括：
 
-- workflow state transitions
-- degradation handling
-- incremental update behavior
-- knowledge graph identity behavior
-- memory loading behavior
-- execution mode switching
-- virtual thread benchmark path
+- 工作流状态迁移
+- 降级处理
+- 增量更新逻辑
+- 图谱实体身份构造
+- 短期记忆加载行为
+- 执行模式切换
+- Virtual Threads 基准路径
 
-## Resume-Safe Positioning
+## 十、适合在简历中的表述
 
-This repository is best described as:
+这个仓库当前最适合这样描述：
 
-> A Java intelligent knowledge base system with document ingest, Kafka-driven incremental updates, hybrid vector-plus-graph QA, lightweight workflow orchestration, and Java 21 virtual-thread-backed I/O concurrency.
+> 一个基于 Java 的智能知识库系统，支持文档入库、Kafka 增量更新、知识图谱与向量检索融合问答、轻量状态机工作流编排，以及 Java 21 Virtual Threads 的 I/O 型任务并发优化。
 
-What it is not yet:
+## 十一、当前边界
 
-- a full Spring StateMachine based production workflow platform
-- a full autonomous multi-agent orchestration framework
-- a fully production-hardened operations platform with complete replay console and deep observability stack
+当前版本已经具备比较完整的主链路，但还不建议夸大为：
 
-## Notes
+- 完整的 Spring StateMachine 工作流平台
+- 完整自治式多 Agent 调度框架
+- 完整生产级运维与补偿平台
 
-- Some historical source files still contain legacy encoding artifacts in comments or prompt strings. They do not affect the core runtime path, but they are good cleanup candidates for future refinement.
-- If you plan to publish this as a standalone public repository, the next recommended step is to add:
-  - `.gitignore`
-  - environment variable example file
-  - sample curl requests
-  - architecture diagram
+更准确的说法是：
+
+- 主链路已跑通
+- 可靠性和状态表达已补一层
+- 已具备从 demo 走向工程化版本的骨架
+
+## 十二、后续建议
+
+如果后续准备继续把这个仓库做成更完整的独立项目，建议下一步补：
+
+- `.gitignore`
+- `.env.example`
+- curl 调用示例
+- 架构图
+- 更完整的 README 部署说明
+- 编码乱码清理
