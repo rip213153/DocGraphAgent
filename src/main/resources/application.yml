@@ -1,0 +1,71 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: agent-knowledge-hub
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:sk-your-key}
+      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+      chat:
+        options:
+          model: gpt-4o
+          temperature: 0.0
+      embedding:
+        options:
+          model: text-embedding-3-small
+
+  kafka:
+    bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
+    consumer:
+      group-id: agenthub-java
+      auto-offset-reset: latest
+    listener:
+      ack-mode: record
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+
+app:
+  neo4j:
+    uri: ${NEO4J_URI:bolt://localhost:7687}
+    user: ${NEO4J_USER:neo4j}
+    password: ${NEO4J_PASSWORD:password}
+  kafka:
+    topic: ${KAFKA_TOPIC:doc-changes}
+    event-ttl-hours: ${KAFKA_EVENT_TTL_HOURS:168}
+  upload-dir: ./uploads
+  memory:
+    short-term:
+      max-messages: ${SHORT_TERM_MAX_MESSAGES:20}
+      read-window: ${SHORT_TERM_READ_WINDOW:10}
+      ttl-hours: ${SHORT_TERM_TTL_HOURS:48}
+      max-context-chars: ${SHORT_TERM_MAX_CONTEXT_CHARS:2000}
+      max-message-chars: ${SHORT_TERM_MAX_MESSAGE_CHARS:300}
+  update:
+    snapshot-ttl-hours: ${DOC_SNAPSHOT_TTL_HOURS:168}
+  workflow:
+    retry:
+      max-attempts: ${WORKFLOW_RETRY_MAX_ATTEMPTS:3}
+      delay-ms: ${WORKFLOW_RETRY_DELAY_MS:200}
+  execution:
+    mode: ${EXECUTION_MODE:virtual}
+    platform-pool-size: ${EXECUTION_PLATFORM_POOL_SIZE:4}
+    extract-max-concurrency: ${EXTRACT_MAX_CONCURRENCY:8}
+  vector:
+    backend: ${VECTOR_BACKEND:milvus}
+    dimension: ${VECTOR_DIMENSION:1536}
+    top-k-default: ${VECTOR_TOP_K_DEFAULT:5}
+    milvus:
+      host: ${MILVUS_HOST:localhost}
+      port: ${MILVUS_PORT:19530}
+      collection: ${MILVUS_COLLECTION:knowledge_chunks}
