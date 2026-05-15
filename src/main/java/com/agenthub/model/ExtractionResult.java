@@ -6,14 +6,16 @@ public class ExtractionResult {
 
     private List<Entity> entities;
     private List<Relation> relations;
+    private List<KnowledgeNote> notes;
     private String sourceChunkId;
 
     public ExtractionResult() {
     }
 
-    public ExtractionResult(List<Entity> entities, List<Relation> relations, String sourceChunkId) {
+    public ExtractionResult(List<Entity> entities, List<Relation> relations, List<KnowledgeNote> notes, String sourceChunkId) {
         this.entities = entities;
         this.relations = relations;
+        this.notes = notes;
         this.sourceChunkId = sourceChunkId;
     }
 
@@ -45,9 +47,18 @@ public class ExtractionResult {
         this.sourceChunkId = sourceChunkId;
     }
 
+    public List<KnowledgeNote> getNotes() {
+        return notes;
+    }
+
+    public void setNotes(List<KnowledgeNote> notes) {
+        this.notes = notes;
+    }
+
     public static final class Builder {
         private List<Entity> entities;
         private List<Relation> relations;
+        private List<KnowledgeNote> notes;
         private String sourceChunkId;
 
         private Builder() {
@@ -63,13 +74,89 @@ public class ExtractionResult {
             return this;
         }
 
+        public Builder notes(List<KnowledgeNote> notes) {
+            this.notes = notes;
+            return this;
+        }
+
         public Builder sourceChunkId(String sourceChunkId) {
             this.sourceChunkId = sourceChunkId;
             return this;
         }
 
         public ExtractionResult build() {
-            return new ExtractionResult(entities, relations, sourceChunkId);
+            return new ExtractionResult(entities, relations, notes, sourceChunkId);
+        }
+    }
+
+    public static class KnowledgeNote {
+        private String topic;
+        private String kind;
+        private String content;
+
+        public KnowledgeNote() {
+        }
+
+        public KnowledgeNote(String topic, String kind, String content) {
+            this.topic = topic;
+            this.kind = kind;
+            this.content = content;
+        }
+
+        public static KnowledgeNoteBuilder builder() {
+            return new KnowledgeNoteBuilder();
+        }
+
+        public String getTopic() {
+            return topic;
+        }
+
+        public void setTopic(String topic) {
+            this.topic = topic;
+        }
+
+        public String getKind() {
+            return kind;
+        }
+
+        public void setKind(String kind) {
+            this.kind = kind;
+        }
+
+        public String getContent() {
+            return content;
+        }
+
+        public void setContent(String content) {
+            this.content = content;
+        }
+
+        public static final class KnowledgeNoteBuilder {
+            private String topic;
+            private String kind;
+            private String content;
+
+            private KnowledgeNoteBuilder() {
+            }
+
+            public KnowledgeNoteBuilder topic(String topic) {
+                this.topic = topic;
+                return this;
+            }
+
+            public KnowledgeNoteBuilder kind(String kind) {
+                this.kind = kind;
+                return this;
+            }
+
+            public KnowledgeNoteBuilder content(String content) {
+                this.content = content;
+                return this;
+            }
+
+            public KnowledgeNote build() {
+                return new KnowledgeNote(topic, kind, content);
+            }
         }
     }
 

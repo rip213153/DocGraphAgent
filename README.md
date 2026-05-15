@@ -1,294 +1,255 @@
-# DocGraphAgent Java版
+# Agent Knowledge Hub Java
 
-这是一个基于 Java 21 和 Spring Boot 构建的智能知识库系统，核心能力包括：
+基于 Java 21 + Spring Boot 3 的知识库服务，支持文档异步入库、向量检索问答、知识图谱检索和 Kafka 增量更新。当前默认模型对齐 DashScope 兼容 OpenAI 接口。
 
-- 文档解析与切分
-- 知识抽取与知识图谱写入
-- 向量检索 + 图谱检索的混合问答
-- 基于 Kafka 的增量更新
-- Redis 短期记忆
-- 轻量状态机工作流编排
-- 基于 Java 21 Virtual Threads 的 I/O 型并发优化
+## 可用分层
 
-## 一、项目定位
+### 基础可用（建议先跑通）
 
-本项目更适合定义为一个**文档驱动的智能知识库问答系统**，而不是复杂的自治多 Agent 平台。
+只依赖以下组件：
 
-当前 Java 版重点解决的是：
+- Redis
+- Milvus（含 etcd + MinIO）
+- DashScope 兼容模型接口
 
-- 文档入库链路打通
-- Kafka 事件驱动的知识更新
-- 知识图谱与向量检索融合问答
-- 工作流状态、重试、降级的工程化表达
-- Java 21 虚拟线程在业务子任务中的真实接入
+可用能力：
 
-## 二、技术栈
+- `POST /api/ingest/upload` 异步上传入库
+- `GET /api/ingest/tasks/{taskId}` 任务状态查询
+- `POST /api/qa/ask` 向量检索问答
+- 图谱不可用时自动降级运行
+
+### 完整可用
+
+在基础可用之外增加：
+
+- Neo4j
+- Kafka
+- Zookeeper
+
+额外能力：
+
+- 图谱写入与图谱检索增强
+- Kafka 驱动的文档增量更新
+- 事件状态回放链路
+
+## 环境要求
 
 - Java 21
-- Spring Boot 3
-- Spring AI
-- Spring Kafka
-- Redis
-- Milvus
-- Neo4j
-- Apache Tika
-- Maven
+- Maven 3.9+
+- Docker Desktop（必须已启动）
 
-## 三、核心能力
+## 最小配置
 
-### 1. 文档入库工作流
+复制 [`.env.example`](./.env.example) 并设置至少以下变量：
 
-文档入库链路支持：
-
-- 解析源文档
-- 文本切分为 chunk
-- 对 chunk 执行知识抽取
-- 向量写入
-- 文档快照持久化
-- 图谱实体与关系写入
-
-当前入库工作流采用轻量状态机方式编排，状态包括：
-
-- `RECEIVED`
-- `PARSED`
-- `CHUNKED`
-- `EXTRACTED`
-- `VECTOR_STORED`
-- `SNAPSHOT_STORED`
-- `GRAPH_STORED`
-- `COMPLETED`
-
-接口返回中已经结构化输出：
-
-- `workflowState`
-- `degraded`
-- `degradeReasons`
-- `retryAttempts`
-
-### 2. Kafka 增量更新
-
-系统支持基于 Kafka 的文档变更事件处理，覆盖：
-
-- `created`
-- `modified`
-- `deleted`
-
-在 `modified` 场景下，当前实现支持：
-
-- 事件幂等校验
-- 版本 / 时间戳顺序保护
-- chunk diff 差异识别
-- stale chunk 的向量删除与图谱清理
-- 新版本快照保存，供后续 diff 使用
-
-### 3. 混合问答
-
-问答链路融合了三类上下文：
-
-- Redis 短期记忆
-- Milvus 向量检索结果
-- Neo4j 图谱检索结果
-
-当前 Java 版已实现：
-
-- 关系型问题与描述型问题的轻量分类
-- 双路检索的加权混排
-- 单路失败时的降级兜底
-- `QAResult` 中输出结构化降级信息
-
-### 4. Java 21 Virtual Threads
-
-本项目不是只在环境上使用 Java 21，而是把 Virtual Threads 真实接入到了业务执行路径中。
-
-当前主要用于：
-
-- chunk 级知识抽取的并发执行
-- 入库阶段向量写入与快照写入的并行执行
-- 文档修改时向量删除与图谱删除的并行执行
-
-## 四、项目结构
-
-```text
-.
-├─ pom.xml
-├─ docker-compose.dev.yml
-├─ docker-compose.full.yml
-└─ src
-   ├─ main
-   │  ├─ java/com/agenthub
-   │  │  ├─ agent
-   │  │  ├─ config
-   │  │  ├─ controller
-   │  │  ├─ memory
-   │  │  ├─ model
-   │  │  ├─ service
-   │  │  └─ workflow
-   │  └─ resources/application.yml
-   └─ test
+```bash
+OPENAI_API_KEY=your-dashscope-key
+OPENAI_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+SPRING_AI_OPENAI_CHAT_OPTIONS_MODEL=qwen3.5-397b-a17b
+SPRING_AI_OPENAI_EMBEDDING_OPTIONS_MODEL=text-embedding-v3
+VECTOR_DIMENSION=1024
+MILVUS_COLLECTION=knowledge_chunks_qwen1024
+SPRING_KAFKA_LISTENER_AUTO_STARTUP=false
+EXTRACT_MAX_CONCURRENCY=1
 ```
 
-## 五、本地依赖
+默认配置文件见 [`src/main/resources/application.yml`](./src/main/resources/application.yml)。
 
-### 1. 开发环境
+## 启动步骤
 
-启动 Redis 和 Milvus：
+### 1. 启动基础依赖（推荐先用它验收）
 
 ```bash
 docker compose -f docker-compose.dev.yml up -d
 ```
 
-适合做以下场景的本地开发与调试：
-
-- 文档解析
-- chunk 抽取
-- 向量侧逻辑验证
-- 部分问答链路验证
-
-### 2. 完整环境
-
-启动 Redis、Milvus、Neo4j、Zookeeper、Kafka：
+### 2. 启动完整依赖（需要图谱和增量链路时）
 
 ```bash
 docker compose -f docker-compose.full.yml up -d
 ```
 
-适合联调以下完整链路：
-
-- 文档入库
-- 图谱写入
-- Kafka 增量更新
-- 图谱 + 向量混合问答
-
-## 六、配置说明
-
-核心配置文件：
-
-- `src/main/resources/application.yml`
-
-重点配置项包括：
-
-- Redis 地址、端口、密码
-- Neo4j URI 与账号密码
-- Kafka 地址与 topic
-- Milvus 地址、端口、collection
-- 工作流重试策略
-- 执行模式：`virtual` 或 `platform`
-- chunk 抽取最大并发数
-
-当前默认配置中比较关键的值有：
-
-- 工作流最大尝试次数：`3`
-- 重试间隔：`200ms`
-- 执行模式：`virtual`
-- 抽取最大并发：`8`
-
-## 七、启动方式
-
-### 1. 编译
-
-```bash
-mvn clean package
-```
-
-### 2. 启动服务
+### 3. 启动应用
 
 ```bash
 mvn spring-boot:run
 ```
 
-默认端口：
+默认端口：`8081`
 
-- `8081`
+## 验收顺序（本地）
 
-## 八、接口说明
+1. 检查服务状态：
 
-### 1. 上传文档
+```bash
+curl http://localhost:8081/actuator
+```
 
-`POST /api/ingest/upload`
+2. 检查依赖就绪：
 
-表单参数：
+```bash
+curl http://localhost:8081/api/admin/stats
+```
 
-- `file`
+看到 `vectorStore.status=ready` 再进行上传和问答。
 
-返回结果中包含：
+3. 上传文档（PowerShell 建议用 `curl.exe`）：
 
-- chunk 数量
-- 实体数量
-- 关系数量
-- 工作流状态
-- 降级信息
-- 重试次数
+```powershell
+curl.exe -X POST "http://localhost:8081/api/ingest/upload" -F "file=@C:\path\to\AQS.md"
+```
 
-### 2. 提问问答
+返回 `202 Accepted + taskId`。
 
-`POST /api/qa/ask`
+4. 查询任务状态：
 
-请求示例：
+```bash
+curl "http://localhost:8081/api/ingest/tasks/<taskId>"
+```
+
+状态最终应为 `SUCCEEDED`。
+
+5. 问答验证：
+
+```powershell
+.\ask.ps1 "AQS是什么？"
+```
+
+## 核心接口
+
+### 异步上传
+
+- `POST /api/ingest/upload`
+- 返回：`202 Accepted`，包含 `taskId`
+
+### 任务查询
+
+- `GET /api/ingest/tasks/{taskId}`
+- 关键阶段：
+  - `QUEUED`
+  - `PROCESSING`
+  - `PARSED`
+  - `CHUNKED`
+  - `EXTRACTING`
+  - `EXTRACTED`
+  - `VECTOR_STORED`
+  - `SNAPSHOT_STORED`
+  - `GRAPH_STORED`
+  - `COMPLETED`
+  - `FAILED`
+
+### 问答
+
+- `POST /api/qa/ask`
+- 请求示例：
 
 ```json
 {
   "sessionId": "demo-session",
-  "question": "Redis 和知识库系统之间是什么关系？"
+  "question": "Milvus 在这个项目里负责什么？"
 }
 ```
 
-### 3. 查看统计信息
+### 状态
 
-`GET /api/admin/stats`
+- `GET /api/admin/stats`
+- 重点字段：
+  - `vectorStore.backend`
+  - `vectorStore.collection`
+  - `vectorStore.retrievalMode`
+  - `vectorStore.status`
+  - `knowledgeGraph.totalEntities`
 
-### 4. 查询事件状态
+## 降级行为
 
-`GET /api/admin/events/{eventId}`
+- Neo4j 不可用：上传和 QA 仍可运行，但返回 `degraded=true` 且包含 `GRAPH_UNAVAILABLE`。
+- Snapshot 存储失败：主链路不中断，返回 `SNAPSHOT_STORE_UNAVAILABLE`。
+- 向量存储不可用：上传任务失败（基础检索能力无法建立）。
 
-### 5. 重放失败事件
+## 常见问题排障
 
-`POST /api/admin/events/{eventId}/replay`
+### 1) `docker ps` 报错无法连接 Docker API
 
-## 九、测试
+典型报错：
 
-运行全部测试：
+`failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine`
+
+处理步骤：
+
+1. 启动 Docker Desktop。
+2. 等待 Docker Engine 变为 Running。
+3. 重新执行：
 
 ```bash
-mvn test
+docker info
+docker ps
 ```
 
-当前测试覆盖的重点包括：
+### 2) Spring Boot 一直提示 Milvus not ready / deadline exceeded
 
-- 工作流状态迁移
-- 降级处理
-- 增量更新逻辑
-- 图谱实体身份构造
-- 短期记忆加载行为
-- 执行模式切换
-- Virtual Threads 基准路径
+典型日志：
 
-## 十、适合在简历中的表述
+`Milvus not ready on startup attempt x/12: DEADLINE_EXCEEDED`
 
-这个仓库当前最适合这样描述：
+处理步骤：
 
-> 一个基于 Java 的智能知识库系统，支持文档入库、Kafka 增量更新、知识图谱与向量检索融合问答、轻量状态机工作流编排，以及 Java 21 Virtual Threads 的 I/O 型任务并发优化。
+1. 先确认 Docker 可用（见问题 1）。
+2. 检查 Milvus 相关容器状态：
 
-## 十一、当前边界
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}"
+```
 
-当前版本已经具备比较完整的主链路，但还不建议夸大为：
+3. 必要时重建依赖：
 
-- 完整的 Spring StateMachine 工作流平台
-- 完整自治式多 Agent 调度框架
-- 完整生产级运维与补偿平台
+```bash
+docker compose -f docker-compose.full.yml up -d
+```
 
-更准确的说法是：
+4. 再启动应用：
 
-- 主链路已跑通
-- 可靠性和状态表达已补一层
-- 已具备从 demo 走向工程化版本的骨架
+```bash
+mvn spring-boot:run
+```
 
-## 十二、后续建议
+### 3) PowerShell 下 `curl -X` 报参数错误
 
-如果后续准备继续把这个仓库做成更完整的独立项目，建议下一步补：
+原因：PowerShell 中 `curl` 默认映射到 `Invoke-WebRequest`，不支持 `-X/-F` 的 cURL 参数风格。
 
-- `.gitignore`
-- `.env.example`
-- curl 调用示例
-- 架构图
-- 更完整的 README 部署说明
-- 编码乱码清理
+处理：
+
+- 始终使用 `curl.exe`：
+
+```powershell
+curl.exe -X POST "http://localhost:8081/api/ingest/upload" -F "file=@C:\path\to\doc.md"
+```
+
+### 4) Maven 报 `No plugin found for prefix 'springboot'`
+
+原因：命令写成了 `springboot:run`（缺少中划线）。
+
+正确命令：
+
+```bash
+mvn spring-boot:run
+```
+
+## 测试
+
+编译：
+
+```bash
+mvn -q -DskipTests compile
+```
+
+测试：
+
+```bash
+mvn -q test
+```
+
+## 相关文档
+
+- 系统架构（中文）：[`docs/architecture-zh.md`](./docs/architecture-zh.md)
+- 体检与整改报告：[`docs/project-audit-and-improvements-2026-05-10.md`](./docs/project-audit-and-improvements-2026-05-10.md)

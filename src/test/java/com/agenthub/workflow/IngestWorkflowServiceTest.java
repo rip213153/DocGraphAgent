@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.BiConsumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -66,8 +67,9 @@ class IngestWorkflowServiceTest {
         DocumentChunk chunk = chunk("E:/docs/agent.md");
         ExtractionResult extraction = extraction(chunk.getChunkId());
 
-        when(docParser.parse("E:/docs/agent.md")).thenReturn(List.of(chunk));
-        when(extractor.extract(List.of(chunk))).thenReturn(List.of(extraction));
+        when(docParser.parse("E:/docs/agent.md", "agent.md", "agent.md")).thenReturn(List.of(chunk));
+        when(extractor.extract(org.mockito.ArgumentMatchers.eq(List.of(chunk)),
+                org.mockito.ArgumentMatchers.<BiConsumer<Integer, Integer>>any())).thenReturn(List.of(extraction));
 
         Map<String, Object> result = service.ingest("agent.md", "E:/docs/agent.md");
 
@@ -76,6 +78,7 @@ class IngestWorkflowServiceTest {
         assertThat(result.get("degradeReasons")).isEqualTo(List.of());
         assertThat(result.get("entities")).isEqualTo(1);
         assertThat(result.get("relations")).isEqualTo(1);
+        verify(vectorStore).deleteByDocId("doc-1");
     }
 
     @Test
@@ -84,8 +87,9 @@ class IngestWorkflowServiceTest {
         DocumentChunk chunk = chunk("E:/docs/agent.md");
         ExtractionResult extraction = extraction(chunk.getChunkId());
 
-        when(docParser.parse("E:/docs/agent.md")).thenReturn(List.of(chunk));
-        when(extractor.extract(List.of(chunk))).thenReturn(List.of(extraction));
+        when(docParser.parse("E:/docs/agent.md", "agent.md", "agent.md")).thenReturn(List.of(chunk));
+        when(extractor.extract(org.mockito.ArgumentMatchers.eq(List.of(chunk)),
+                org.mockito.ArgumentMatchers.<BiConsumer<Integer, Integer>>any())).thenReturn(List.of(extraction));
         doThrow(new IllegalStateException("redis down"))
                 .when(snapshotStore).saveChunks(anyString(), anyList());
 
@@ -105,8 +109,9 @@ class IngestWorkflowServiceTest {
         DocumentChunk chunk = chunk("E:/docs/agent.md");
         ExtractionResult extraction = extraction(chunk.getChunkId());
 
-        when(docParser.parse("E:/docs/agent.md")).thenReturn(List.of(chunk));
-        when(extractor.extract(List.of(chunk))).thenReturn(List.of(extraction));
+        when(docParser.parse("E:/docs/agent.md", "agent.md", "agent.md")).thenReturn(List.of(chunk));
+        when(extractor.extract(org.mockito.ArgumentMatchers.eq(List.of(chunk)),
+                org.mockito.ArgumentMatchers.<BiConsumer<Integer, Integer>>any())).thenReturn(List.of(extraction));
         doThrow(new IllegalStateException("neo4j down"))
                 .when(knowledgeGraph).upsertEntity(any(), anyInt(), anyString(), anyString());
 
@@ -123,8 +128,10 @@ class IngestWorkflowServiceTest {
         IngestWorkflowService service = newService(1);
         DocumentChunk chunk = chunk("E:/docs/agent.md");
 
-        when(docParser.parse("E:/docs/agent.md")).thenReturn(List.of(chunk));
-        when(extractor.extract(List.of(chunk))).thenReturn(List.of(extraction(chunk.getChunkId())));
+        when(docParser.parse("E:/docs/agent.md", "agent.md", "agent.md")).thenReturn(List.of(chunk));
+        when(extractor.extract(org.mockito.ArgumentMatchers.eq(List.of(chunk)),
+                org.mockito.ArgumentMatchers.<BiConsumer<Integer, Integer>>any()))
+                .thenReturn(List.of(extraction(chunk.getChunkId())));
         doThrow(new IllegalStateException("milvus down"))
                 .when(vectorStore).addChunks(List.of(chunk));
 
@@ -170,6 +177,11 @@ class IngestWorkflowServiceTest {
                         .relation("used_by")
                         .tail("AgentKnowledgeHub")
                         .confidence(0.9)
+                        .build()))
+                .notes(List.of(ExtractionResult.KnowledgeNote.builder()
+                        .topic("Redis")
+                        .kind("definition")
+                        .content("Redis is used as short-term memory.")
                         .build()))
                 .sourceChunkId(chunkId)
                 .build();

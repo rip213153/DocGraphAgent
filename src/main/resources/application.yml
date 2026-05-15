@@ -14,15 +14,15 @@ spring:
 
   ai:
     openai:
-      api-key: ${OPENAI_API_KEY:sk-your-key}
-      base-url: ${OPENAI_BASE_URL:https://api.openai.com/v1}
+      api-key: ${OPENAI_API_KEY:}
+      base-url: ${OPENAI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
       chat:
         options:
-          model: gpt-4o
+          model: ${SPRING_AI_OPENAI_CHAT_OPTIONS_MODEL:qwen3.5-397b-a17b}
           temperature: 0.0
       embedding:
         options:
-          model: text-embedding-3-small
+          model: ${SPRING_AI_OPENAI_EMBEDDING_OPTIONS_MODEL:text-embedding-v3}
 
   kafka:
     bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
@@ -31,11 +31,15 @@ spring:
       auto-offset-reset: latest
     listener:
       ack-mode: record
+      auto-startup: ${SPRING_KAFKA_LISTENER_AUTO_STARTUP:false}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
 app:
+  llm:
+    connect-timeout: ${LLM_CONNECT_TIMEOUT:PT20S}
+    read-timeout: ${LLM_READ_TIMEOUT:PT120S}
   neo4j:
     uri: ${NEO4J_URI:bolt://localhost:7687}
     user: ${NEO4J_USER:neo4j}
@@ -43,7 +47,9 @@ app:
   kafka:
     topic: ${KAFKA_TOPIC:doc-changes}
     event-ttl-hours: ${KAFKA_EVENT_TTL_HOURS:168}
-  upload-dir: ./uploads
+  upload-dir: ${UPLOAD_DIR:./uploads}
+  upload:
+    task-ttl-hours: ${APP_UPLOAD_TASK_TTL_HOURS:168}
   memory:
     short-term:
       max-messages: ${SHORT_TERM_MAX_MESSAGES:20}
@@ -60,12 +66,31 @@ app:
   execution:
     mode: ${EXECUTION_MODE:virtual}
     platform-pool-size: ${EXECUTION_PLATFORM_POOL_SIZE:4}
-    extract-max-concurrency: ${EXTRACT_MAX_CONCURRENCY:8}
+    extract-max-concurrency: ${EXTRACT_MAX_CONCURRENCY:1}
   vector:
     backend: ${VECTOR_BACKEND:milvus}
-    dimension: ${VECTOR_DIMENSION:1536}
+    dimension: ${VECTOR_DIMENSION:1024}
     top-k-default: ${VECTOR_TOP_K_DEFAULT:5}
     milvus:
       host: ${MILVUS_HOST:localhost}
       port: ${MILVUS_PORT:19530}
-      collection: ${MILVUS_COLLECTION:knowledge_chunks}
+      collection: ${MILVUS_COLLECTION:knowledge_chunks_qwen1024_hybrid_v25}
+      hybrid-enabled: ${MILVUS_HYBRID_ENABLED:true}
+      text-field: ${MILVUS_TEXT_FIELD:content}
+      dense-field: ${MILVUS_DENSE_FIELD:dense_embedding}
+      sparse-field: ${MILVUS_SPARSE_FIELD:content_sparse}
+      analyzer-type: ${MILVUS_ANALYZER_TYPE:chinese}
+      ranker: ${MILVUS_RANKER:rrf}
+      rrf-k: ${MILVUS_RRF_K:60}
+      dense-weight: ${MILVUS_DENSE_WEIGHT:0.65}
+      sparse-weight: ${MILVUS_SPARSE_WEIGHT:1.0}
+      candidate-multiplier: ${MILVUS_CANDIDATE_MULTIPLIER:4}
+      startup:
+        max-attempts: ${MILVUS_STARTUP_MAX_ATTEMPTS:12}
+        retry-delay-ms: ${MILVUS_STARTUP_RETRY_DELAY_MS:3000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

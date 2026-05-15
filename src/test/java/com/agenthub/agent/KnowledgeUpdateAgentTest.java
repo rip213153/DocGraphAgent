@@ -58,12 +58,14 @@ class KnowledgeUpdateAgentTest {
     @Mock
     private EventProcessingStore eventProcessingStore;
 
+    private SimpleMeterRegistry meterRegistry;
     private ExecutorService workflowExecutor;
     private KnowledgeUpdateAgent knowledgeUpdateAgent;
 
     @BeforeEach
     void setUp() {
         workflowExecutor = Executors.newVirtualThreadPerTaskExecutor();
+        meterRegistry = new SimpleMeterRegistry();
         knowledgeUpdateAgent = new KnowledgeUpdateAgent(
                 docParser,
                 extractor,
@@ -71,7 +73,7 @@ class KnowledgeUpdateAgentTest {
                 knowledgeGraphService,
                 snapshotStore,
                 eventProcessingStore,
-                new SimpleMeterRegistry(),
+                meterRegistry,
                 objectMapper,
                 workflowExecutor
         );
@@ -247,6 +249,58 @@ class KnowledgeUpdateAgentTest {
         verify(vectorStoreService).deleteByDocId(docIdCaptor.capture());
         verify(knowledgeGraphService).deleteBySource(filePath);
         assertThat(docIdCaptor.getValue()).hasSize(16);
+    }
+
+    @Test
+    void shouldRecordProcessedAndDeletedMetricsWhenDeleteEventHandled() throws Exception {
+        DocumentChangeEvent event = DocumentChangeEvent.builder()
+                .eventId("evt-delete-1")
+                .filePath("E:/docs/agent.md")
+                .changeType("deleted")
+                .timestamp(Instant.parse("2026-04-18T10:00:00Z"))
+                .sourceType("kafka")
+                .build();
+
+        knowledgeUpdateAgent.processChangeEvent(event);
+
+        assertThat(meterRegistry.get("agenthub.kafka.events.processed")
+                .tag("changeType", "deleted")
+                .counter().count()).isEqualTo(1.0);
+        assertThat(meterRegistry.get("agenthub.update.deleted")
+                .counter().count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void shouldRecordSkippedMetricWhenDuplicateEventIsIgnored() throws Exception {
+        DocumentChangeEvent event = DocumentChangeEvent.builder()
+                .eventId("evt-dup-1")
+                .filePath("E:/docs/agent.md")
+                .changeType("deleted")
+                .timestamp(Instant.parse("2026-04-18T10:00:00Z"))
+                .sourceType("kafka")
+                .build();
+
+        knowledgeUpdateAgent.processChangeEvent(event);
+        knowledgeUpdateAgent.processChangeEvent(event);
+
+        assertThat(meterRegistry.get("agenthub.kafka.events.skipped")
+                .tag("reason", "duplicate")
+                .counter().count()).isEqualTo(1.0);
+    }
+
+    @Test
+    void shouldRecordFailureAndDurationMetricsWhenEventParsingFails() throws Exception {
+        when(objectMapper.readTree("bad-json")).thenThrow(new RuntimeException("boom"));
+
+        assertThatThrownBy(() -> knowledgeUpdateAgent.handleCDCEvent("bad-json"))
+                .isInstanceOf(RetryableEventException.class)
+                .hasMessageContaining("CDC event processing failed");
+
+        assertThat(meterRegistry.get("agenthub.kafka.events.failed")
+                .tag("retryable", "true")
+                .counter().count()).isEqualTo(1.0);
+        assertThat(meterRegistry.get("agenthub.update.event.duration")
+                .timer().count()).isEqualTo(1L);
     }
 
     private DocumentChunk chunk(String source) {

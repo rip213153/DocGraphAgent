@@ -9,6 +9,7 @@ import com.agenthub.service.KnowledgeGraphService;
 import com.agenthub.service.NonRetryableEventException;
 import com.agenthub.service.RetryableEventException;
 import com.agenthub.service.VectorStoreService;
+import com.agenthub.util.DocumentIdentity;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -18,8 +19,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -164,7 +163,7 @@ public class KnowledgeUpdateAgent {
         vectorStore.addChunks(chunks);
         long version = resolveAppliedVersion(filePath, explicitVersion, true);
         upsertKnowledge(chunks, filePath, version);
-        persistSnapshot(computeDocId(filePath), chunks);
+        persistSnapshot(DocumentIdentity.computeDocId(filePath), chunks);
         meterRegistry.counter("agenthub.update.vector.added").increment(chunks.size());
         log.info("Knowledge create completed filePath={} version={} chunks={}", filePath, version, chunks.size());
     }
@@ -174,7 +173,7 @@ public class KnowledgeUpdateAgent {
     }
 
     public void handleModify(String filePath, Long explicitVersion) throws Exception {
-        String docId = computeDocId(filePath);
+        String docId = DocumentIdentity.computeDocId(filePath);
         List<DocumentChunk> previousChunks = loadSnapshotOrFallback(docId);
         List<DocumentChunk> currentChunks = docParser.parse(filePath);
         ChunkDiff diff = ChunkDiff.of(previousChunks, currentChunks);
@@ -217,22 +216,12 @@ public class KnowledgeUpdateAgent {
     }
 
     public void handleDelete(String filePath, Long explicitVersion) {
-        String docId = computeDocId(filePath);
+        String docId = DocumentIdentity.computeDocId(filePath);
         vectorStore.deleteByDocId(docId);
         knowledgeGraph.deleteBySource(filePath);
         deleteSnapshot(docId);
         documentVersions.put(filePath, resolveAppliedVersion(filePath, explicitVersion, false));
         meterRegistry.counter("agenthub.update.deleted").increment();
-    }
-
-    private static String computeDocId(String path) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hash = digest.digest(path.getBytes(StandardCharsets.UTF_8));
-            return java.util.HexFormat.of().formatHex(hash).substring(0, 16);
-        } catch (Exception e) {
-            return String.valueOf(path.hashCode());
-        }
     }
 
     private Map<String, DocumentChunk> indexByChunkId(List<DocumentChunk> chunks) {
@@ -252,7 +241,7 @@ public class KnowledgeUpdateAgent {
     }
 
     private String buildFallbackEventId(String filePath) {
-        return computeDocId(filePath) + "-" + System.currentTimeMillis();
+        return DocumentIdentity.computeDocId(filePath) + "-" + System.currentTimeMillis();
     }
 
     private boolean shouldSkipEvent(DocumentChangeEvent event) {

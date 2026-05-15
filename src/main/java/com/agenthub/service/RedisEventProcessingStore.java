@@ -47,7 +47,7 @@ public class RedisEventProcessingStore implements EventProcessingStore {
             return Optional.empty();
         }
     }
-
+    //
     @Override
     public Optional<Instant> getLastProcessedTimestamp(String filePath) {
         if (filePath == null || filePath.isBlank()) {
